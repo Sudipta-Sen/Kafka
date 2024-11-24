@@ -27,7 +27,11 @@ To locate a specific message in Kafka, we need:
 - Offset
 
 ### Partitions and Scalability
-Kafka partitions help with scaling by allowing multiple consumers to read data in parallel. However, only one consumer within a group can read from a single partition to prevent duplicates.
+- Kafka partitions help with scaling by allowing multiple consumers to read data in parallel. However, only one consumer within a group can read from a single partition to prevent duplicates.
+- We can't divide data from a single partition in Kafka to store in different systems because each partition is an ordered, immutable sequence of records that's independent of other partitions.
+- The number of partitions for a Kafka topic should be decided based on two key factors: --
+    - **Storage Requirement:** Since the data in a single partition cannot be split across multiple systems, each partition's data must fit within the storage capacity of one system.
+    - **Parallel Processing Requirement:** Each partition can only be read by one consumer within a consumer group. So, if your application needs more parallel processing, you should increase the number of partitions in the topic to allow more consumers to process the data at the same time.
 
 ## Kafka Connect
 Kafka Connect simplifies integration between external systems and Kafka. It can be used to:
