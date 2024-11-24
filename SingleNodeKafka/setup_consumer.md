@@ -14,7 +14,7 @@ assume name of the container is `kafka`
 Use the kafka-console-consumer command to send messages to your Kafka topic. The Kafka binaries are usually located in `/usr/bin/`
 
 ```bash
-kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic_name> --from-beginning --partition 0
+kafka-console-consumer --bootstrap-server localhost:9092 --topic <topic_name> --from-beginning --partition 0
 ```
 
 - `--bootstrap-server`: Specifies the address of the Kafka broker.
