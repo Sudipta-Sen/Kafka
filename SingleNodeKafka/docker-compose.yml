@@ -7,6 +7,9 @@ services:
     ports:
       - 2181:2181 # <host_port>:<container_port>, Host port refers to local machine
 # When a client outside the Docker container (e.g., on your host machine) connects to localhost:2181, that traffic is routed to the zookeeper container on port 2181.
+    volumes:
+      - zookeeper-data:/data
+      - zookeeper-datalog:/datalog
 
   kafka:
     image: confluentinc/cp-kafka
@@ -18,6 +21,9 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
   # configures Kafka to advertise its listener on port 9092 using the PLAINTEXT protocol. This ensures that external clients and containers will be able to connect to Kafka using this listener.
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - kafka-logs:/var/log/kafka
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -31,4 +37,13 @@ services:
       KAFKA_CLUSTERS_0_NAME: sudisen-local # This specifies the name of the Kafka cluster displayed in the UI as sudisen-local.
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+# Volumes are added to make the kafka data and configs permanent accross multiple docker restarts
+volumes:
+  kafka-data:
+  kafka-logs:
+  zookeeper-data:
+  zookeeper-datalog:
 # docker compose -f docker-compose.yml up -d
+# docker volume ls
+# docker volume inspect <volume_name>
