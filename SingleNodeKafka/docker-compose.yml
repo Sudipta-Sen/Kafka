@@ -3,20 +3,32 @@ version: '3.1'
 services:
   zookeeper:
     image: zookeeper
-    # restart: always
-    # hostname: zookeeper
     container_name: zookeeper
     ports:
-      - 2181:2181
+      - 2181:2181 # <host_port>:<container_port>, Host port refers to local machine
+# When a client outside the Docker container (e.g., on your host machine) connects to localhost:2181, that traffic is routed to the zookeeper container on port 2181.
+
   kafka:
     image: confluentinc/cp-kafka
-    # restart: always
-    # hostname: kafka
     container_name: kafka
     ports:
       - 9092:9092
     environment:
-      KAFKA_ADVERTISED_HOST_NAME: localhost
+      KAFKA_ADVERTISED_HOST_NAME: kafka
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092 
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+  # configures Kafka to advertise its listener on port 9092 using the PLAINTEXT protocol. This ensures that external clients and containers will be able to connect to Kafka using this listener.
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - 8090:8080
+    depends_on:
+      - kafka
+      - zookeeper
+    environment:
+      KAFKA_CLUSTERS_0_NAME: sudisen-local # This specifies the name of the Kafka cluster displayed in the UI as sudisen-local.
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
 # docker compose -f docker-compose.yml up -d
