@@ -1,0 +1,81 @@
+services:
+  zookeeper:
+    image: zookeeper:3.6.3
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    volumes:
+      - ./tmp/zookeeper/data:/data
+      - ./tmp/zookeeper/datalog:/datalog
+      - ./tmp/zookeeper/log:/var/log/zookeeper
+
+  kafka-1:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-1
+    ports:
+      - "8097:8097" # 9092 will be used in internal network so we don't need it to be mapped outside docker
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:9092,EXTERNAL://localhost:8097 # We can't have two listener on the same port
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    volumes:
+      - ./tmp/kafka-1/data:/var/lib/kafka/data
+      - ./tmp/kafka-1/log:/var/log/kafka
+
+  kafka-2:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-2
+    ports:
+      - "8098:8098"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:9092,EXTERNAL://localhost:8098 # we can't use 0.0.0.0 in place of localhost as -- advertised.listeners cannot use the nonroutable meta-address 0.0.0.0.
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      
+    volumes:
+      - ./tmp/kafka-2/data:/var/lib/kafka/data
+      - ./tmp/kafka-2/log:/var/log/kafka
+
+  kafka-3:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-3
+    ports:
+      - "8099:8099"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:9092,EXTERNAL://localhost:8099
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    volumes:
+      - ./tmp/kafka-3/data:/var/lib/kafka/data
+      - ./tmp/kafka-3/log:/var/log/kafka
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - 8090:8080
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - zookeeper
+    environment:
+      KAFKA_CLUSTERS_0_NAME: sudisenMultiNodeCluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092 # These are all mapped to 9092 as kafka-ui recides internal to docker
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    volumes:
+      - ./tmp/kafka-ui/log:/var/log/kafka-ui
