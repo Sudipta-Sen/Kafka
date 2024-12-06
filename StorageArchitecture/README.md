@@ -30,7 +30,8 @@ We can break down its architecture into three parts:
 
 - **Kafka Topics:**
     -  A Kafka topic is a logical name used to group messages, similar to how a database table groups data records.
-    - Records are stored and published using a kafka topic. Topics are partitioned and replicated across multiple brokers. 
+    - Records are stored and published using a kafka topic. Topics are partitioned and replicated across multiple brokers.
+    ![plot](Pictures/1.png)
 
 - **Partitions:**
     - Mechanism to divide a topic into smaller, more manageable parts.
@@ -41,17 +42,37 @@ We can break down its architecture into three parts:
         - `Invoice` Topic: Created with 5 partitions.
         - Result: Kafka creates 5 directories for the `invoices` topic, one for each partition.
 
+            ![plot](Pictures/2.png)
+
+        - So in the above picture we can see 5 folders are created for topic `invoice`, as we give partition 5.
+
 - **Replication Factor:**
     - The replication factor determines how many copies of the log we want to maintain the Kafka cluster. This ensures data redundancy and fault tolerance.
 
     - Example
-        -  If you create a Topic called `invoices` with 5 partitions and a replication factor of 2, Kafka will create 10 directories i.e each partition has a total 2 copies each so that if 1 got destroied we can retrive the data from another copy.
+        -  If you create a Topic called `invoices` with 5 partitions and a replication factor of 3, Kafka will create 15 directories i.e each partition has a total 23 copies each so that if 1 got destroied we can retrive the data from another copies.
+
+        ```bash
+         kafka-topics --describe --topic invoice --bootstrap-server kafka-1:9092
+        ```
+        ![plot](Pictures/3.png)
+        - From the above picture we can see 3 partitions in each replica.
 
 - **Log Files and Segments**
     -  Messages are stored in the directories as log files.
     - **Splitting Log Files:** Instead of one large log file, Kafka splits these into smaller segments to manage them better.
         - Default Segment Size: 1 GB or 1 week of data, whichever is smaller.
         - Custom Configuration: You can configure smaller sizes (e.g., 1 MB).
+    - Define segment size while topic creation, (1MB)
+    ```bash
+    kafka-topics.sh --create --topic invoice --bootstrap-server kafka-1:9092 --partitions 5 --replication-factor 3 --config segment.bytes=1024
+    ```
+    - Alter segment after topic creation
+    ```bash
+    kafka-configs.sh --alter --entity-type topics --entity-name invoice --add-config segment.bytes=1024 --bootstrap-server kafka-1:9092
+    ```
+
+    ![alt-text-1](Pictures/5.png)   ![alt-text-2](Pictures/6.png)
 
 - **Offsets:**
     - Each message within a partition has a unique identifier called an offset. These are `32-bit` integers.
@@ -59,6 +80,9 @@ We can break down its architecture into three parts:
         - Second message has offset 0001 and so on.
     - **Segment File Naming:** The name of the segment file includes the first offset in that segment.
 
+        ![plot](Pictures/4.png)
+
+        In the picture we can see the log file named `00000000000000000017.log` has the starting offset `17`.
 -  **Locating Messages:** 
     - To find a specific message, we need to know three things:
         - Topic name
@@ -82,6 +106,14 @@ We can break down its architecture into three parts:
 
 - **Followers:**
     - Follower brokers replicate the leader's data and take over if the leader fails, ensuring high availability.  If the replication factor is 3, Kafka will create 2 follower directories for each leader.
+
+        ```bash
+         kafka-topics --describe --topic invoice --bootstrap-server kafka-1:9092
+        ```
+
+        ![plot](Pictures/3.png)
+    
+    - From the above picture we can see the leader and replica partitions.
 
 - **In Sync Replicas (ISRs):**
     - ISRs are replicas that are fully caught up with the leader's data. They ensure the durability of data.
