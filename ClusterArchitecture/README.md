@@ -7,17 +7,37 @@ In a development environment, Kafka starts with a single broker, but in producti
 ## Key Concepts:
 
 1. Masterless Architecture:
-    - Kafka does not follow the traditional master-slave architecture. Instead, it uses Zookeeper to manage cluster membership, handle broker failures, and coordinate the cluster's operational tasks.
+    - Kafka does not follow the traditional master-slave architecture. Instead, it uses `Zookeeper to manage cluster membership`, handle broker failures, and coordinate the cluster's operational tasks.
 
 2. Cluster Membership:
     - Kafka brokers are assigned unique broker IDs configured in their setup files.
+
     - Zookeeper maintains the list of active brokers by creating ephemeral nodes for each broker under the path `/brokers/ids`. These nodes remain as long as the broker is active and connected to Zookeeper.
+
+        ![plot](Pictures/1.png)
+
+        Access the Zookeeper CLI inside the Zookeeper container, navigate to the following directory `/apache-zookeeper-3.6.3-bin/bin` and execute the command `zkCli.sh`. This will launch the Zookeeper CLI interface for managing and interacting with Zookeeper services.
+
+        ![plot](Pictures/2.png)
+
+        From the image, we can see that Zookeeper is successfully tracking and displaying all three active Kafka brokers currently running.  [ Docker-Compose configuration file](../StorageArchitecture/MultiNodeKafka_Docker.yml) used to spin up this multi-node Kafka cluster.
+
     - When a broker disconnects or crashes, Zookeeper removes its corresponding ephemeral node, marking the broker as inactive.
 
 3. Controller Role:
-    - Kafka clusters require a controller, a broker with additional responsibilities for managing cluster-level administrative tasks.
+
+    - Kafka clusters require `a controller,a broker with additional responsibilities for managing cluster-level administrative tasks`.
+
     - The controller ensures that when a broker fails, its responsibilities (like managing partitions) are reassigned to another active broker.
+
     - The controller is not a dedicated broker but a regular broker elected to handle extra tasks. Only one broker can act as a controller at any time in a Kafka cluster.
+
+        ![plot](Pictures/3.png)
+
+        From the Zookeeper CLI interface, we can observe that in the current setup of the multi-node Kafka cluster, brokerId-1 has been elected as the controller. This status can also be cross-verified by checking the controller information within the Kafka-UI dashboard. Both interfaces confirm that brokerId-1 is currently managing the cluster operations. 
+
+        ![plot](Pictures/4.png)
+    
 
 ## Controller Election Process:
 - The first broker that starts up becomes the controller by creating an ephemeral controller node in Zookeeper.
@@ -25,13 +45,26 @@ In a development environment, Kafka starts with a single broker, but in producti
 - If the controller crashes, its ephemeral node in Zookeeper is removed, and the other brokers try to become the controller by creating the node again. Only one broker succeeds in becoming the new controller.
 
 ## Broker Failures and Reassignment:
-- When a broker goes offline, the controller detects it through Zookeeper and reassigns its responsibilities to other active brokers.
+- When a broker goes offline, the controller detects it through Zookeeper and reassigns its responsibilities to other active brokers autometically.
+
 - If a broker comes back online after losing its controller status, it simply rejoins as a regular broker. It does not regain controller status unless a re-election is triggered.
 
 ## Example Setup and Demonstration:
-- A three-node Kafka cluster uses Zookeeper to manage broker IDs and the controller election.
-- Commands like ls in the Zookeeper shell can display the list of active brokers and show which broker is the current controller.
-- If the current controller broker is brought down, Zookeeper will automatically elect a new controller and continue operations seamlessly.
+- As we see earlier brokerId-1 is the current contoller. Now  stop the controller broker to simulate a failure and observe the election of a new controller. 
+
+    ![plot](Pictures/6.png)
+
+    From the above screenshot, we can confirm that brokerId-1 has been stopped, leading to brokerId-2 taking over as the new controller for the Kafka cluster. This behavior aligns with Kafka’s election mechanism, where a new controller is automatically selected when the previous one fails. We can also validate this change visually in the Kafka-UI,
+
+    ![plot](Pictures/5.png)
+
+- Now, restart the broker that was stopped earlier. After the broker has restarted, verify the current controller again using the Zookeeper CLI.
+
+    ![plot](Pictures/7.png)
+
+    From the above picture, we can confirm that after brokerId-1 was brought back online, but the controller did not revert to brokerId-1. BrokerId-2 continued to serve as the controller, demonstrating Kafka's mechanism where a new controller remains in place even when the previous one rejoins the cluster. This behavior is also reflected in Kafka-UI
+
+    ![plot](Pictures/8.png)
 
 ## Partition Allocation in Kafka:
 
@@ -51,19 +84,28 @@ To ensure load balancing and fault tolerance, Kafka follows a specific process w
 
     - **Fault Tolerance:** Duplicate copies (replicas) of partitions should be placed on different brokers and even across different racks to ensure high availability.
 
-2. Partition Allocation Strategy:
+2. Leader and Follower Assignments:
 
-    - Kafka creates an ordered list of brokers and assigns partitions using a round-robin approach. For example, if you create a topic with 10 partitions and a replication factor of 3, Kafka will have 30 replicas to distribute across brokers.
+    - **Leaders:** 
+        - Kafka assigns leader partitions to brokers first. The leader is responsible for handling all requests from producers (writing data) and consumers (reading data). 
+        - It ensures the data is replicated to its follower brokers.
 
-3. Leader and Follower Assignments:
+    - **Followers:**
+        - Kafka then assigns follower replicas, ensuring they are placed on different brokers to maintain redundancy and fault tolerance.
+        - Follower brokers are responsible for replicating data from the leader to stay in sync. They do not handle direct requests from producers or consumers but can take over as leaders if the current leader fails.
 
-    - **Leaders:** Kafka assigns leader partitions to brokers first. The leader is responsible for handling all requests from producers and consumers.
+3. Partition Allocation Strategy:
 
-    - **Followers:** Kafka then assigns follower replicas, ensuring they are placed on different brokers to maintain redundancy and fault tolerance.
+    - Kafka creates an ordered list of brokers and assigns leader partitions using a round-robin approach first and then follower partitions. For example, if you create a topic with 10 partitions and a replication factor of 3, Kafka will have 30 replicas to distribute across brokers.
 
 4. Example:
 
-    - In a 6-broker cluster with 10 partitions and a replication factor of 3, Kafka starts by assigning leader partitions to brokers in a round-robin manner. Once all leaders are assigned, follower partitions are distributed to other brokers in the cluster, ensuring replicas are not on the same broker.
+    - In a 6-broker cluster with 10 partitions and a replication factor of 3, Kafka starts by assigning leader partitions to brokers in a round-robin manner. Once all leaders are assigned, follower partitions are distributed to other brokers in the cluster, ensuring replicas are not on the same broker. The distribution looks like below -- 
+
+        ![plot](Pictures/9.jpeg)
+
+        Here R1, R2 are the racks where the brokers are present and P0 to P9 are the 10 partitions and each partitions is replicated 3 times as we define the replication factor as 3.
+
 
 ## Fault Tolerance in Kafka:
 Fault tolerance is crucial for Kafka, and it is achieved through replication and careful placement of replicas across brokers and racks.
@@ -75,15 +117,6 @@ Fault tolerance is crucial for Kafka, and it is achieved through replication and
 2. In-Sync Replicas (ISR):
 
     - Kafka maintains a list of In-Sync Replicas (ISR), which are the replicas that are up-to-date with the leader. If a follower replica falls too far behind, it is removed from the ISR list until it catches up.
-
-## Leader and Follower Responsibilities:
-
-1. Leader Broker:
-
-    - The leader broker for a partition handles all requests from producers (writing data) and consumers (reading data). It ensures the data is replicated to its follower brokers.
-
-2. Follower Brokers:
-    - Follower brokers are responsible for replicating data from the leader to stay in sync. They do not handle direct requests from producers or consumers but can take over as leaders if the current leader fails.
 
 ## Committed vs. Uncommitted Messages:
 
