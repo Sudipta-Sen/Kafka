@@ -26,7 +26,7 @@ In a development environment, Kafka starts with a single broker, but in producti
 
 3. Controller Role:
 
-    - Kafka clusters require `a controller,a broker with additional responsibilities for managing cluster-level administrative tasks`.
+    - Kafka clusters require `a controller,a broker with additional responsibilities for managing cluster-level administrative tasks`, i.e monitoring list of active brokers, reassigning work when active broker leavs the cluster.
 
     - The controller ensures that when a broker fails, its responsibilities (like managing partitions) are reassigned to another active broker.
 
@@ -104,8 +104,35 @@ To ensure load balancing and fault tolerance, Kafka follows a specific process w
 
         ![plot](Pictures/9.jpeg)
 
-        Here R1, R2 are the racks where the brokers are present and P0 to P9 are the 10 partitions and each partitions is replicated 3 times as we define the replication factor as 3.
+        Here R1, R2 are the racks where the brokers are present and P0 to P9 are the 10 partitions and each partitions is replicated 3 times as we define the replication factor as 3. In this example, all brokers in the Kafka cluster act as both leader and follower nodes. Each broker handles the leader partition for some topics while serving as a follower for others. 
 
+## Producer Flow
+
+- The producer starts by connecting to any broker in the Kafka cluster.
+
+- The producer sends a metadata request to the broker. This request asks for information about the topic and its partitions (leader partitions).
+
+- All Kafka brokers can respond to the metadata request. The response contains the metadata of the topic, specifically a list of leader partitions and their corresponding broker addresses.
+
+- The producer selects the partition leader (from the metadata) where the message needs to be sent.
+
+- The producer sends the message directly to the leader broker of the chosen partition.
+
+- The leader broker receives the message, stores it in the appropriate partition, and sends back an acknowledgment to the producer.
+
+## Consumer Flow
+
+- The consumer connects to any broker in the Kafka cluster to request data.
+
+- Similar to the producer, the consumer requests metadata, which includes information about the leader for each partition.
+
+- The consumer queries the metadata to identify which broker is the leader for the partition they wish to read from.
+
+- The consumer connects directly to the leader broker of the partition.
+
+- The leader broker responds with the message stored in its partition (starting from the consumer's last read offset).
+
+- The consumer consumes the data from the leader broker and can continue to read from it in the future.
 
 ## Fault Tolerance in Kafka:
 Fault tolerance is crucial for Kafka, and it is achieved through replication and careful placement of replicas across brokers and racks.
@@ -118,7 +145,38 @@ Fault tolerance is crucial for Kafka, and it is achieved through replication and
 
     - Kafka maintains a list of In-Sync Replicas (ISR), which are the replicas that are up-to-date with the leader. If a follower replica falls too far behind, it is removed from the ISR list until it catches up.
 
-## Committed vs. Uncommitted Messages:
+
+## In-Sync Replica (ISR) List:
+
+In Kafka, the ISR list is critical for maintaining data consistency and ensuring that Kafka clusters are fault-tolerant. The ISR consists of all the replicas (followers) of a partition that are fully synchronized with the leader partition.
+
+### Maintaining the ISR List
+The ISR list is maintained by the **leader broker** and persisted in the zookerper. If a follower `falls too far behind`, it is temporarily removed from the ISR list.
+
+The ISR list is crucial because it tracks the followers that are fully synchronized with the leader. These replicas are prime candidates to become the leader if the current leader fails. Therefore, maintaining an accurate ISR list ensures the cluster's fault tolerance and data consistency by ensuring that only up-to-date replicas can take over leadership responsibilities and no data is lost.
+
+### Common Reasons Followers Fall Behind
+1. **Network Congestion:** Poor network performance can delay the replication process, causing the follower to lag behind the leader.
+2. **Broker Failures:** If a follower broker crashes, all the replicas it maintains will lag until the broker is restarted.
+
+### How the ISR List Works
+1. Follower Requests: A follower connects to the leader and requests messages starting from a particular offset (e.g., offset 0). The leader sends all available messages, and the follower processes them.
+2. Offset Check: By checking the last offset requested by the follower, the leader determines how up-to-date the follower is.
+3. Dynamically Updating the ISR: The ISR list is dynamic. Followers that are in sync (within a set time) are added to the list, while those `falling too far behind` are removed.
+
+### Key Concept: "falling too far behind"
+Kafka allows followers to be a bit behind the leader due to network delays or processing time. The default tolerance is 10 seconds. If a follower hasn’t requested recent messages in the last 10 seconds, it will be removed from the ISR list.
+
+
+
+### Potential issue with the ISR
+A potential issue with the ISR list arises when all followers lag behind the leader. If this happens, the ISR list becomes empty. If the leader crashes, we need to choose a new leader, but we might lose the messages that were only stored in the leader and not replicated yet.
+
+To address this, two concepts are introduced:
+1. Committed vs  Uncommitted Messages
+2. Minimum In-Sync Replicas Configuration
+
+### Committed vs. Uncommitted Messages:
 
 1. Committed Messages:
 
@@ -128,6 +186,27 @@ Fault tolerance is crucial for Kafka, and it is achieved through replication and
 
     - Messages that have not been replicated to all ISR members are uncommitted. If the leader fails, these messages may be lost, but producers can resend them if they don't receive an acknowledgment.
 
-## Minimum In-Sync Replicas Configuration:
+### Minimum ISR configuration
 
-Kafka allows you to configure the minimum number of in-sync replicas (ISR) required for a message to be committed. For example, if you set a minimum ISR of 2 and two replicas are not in sync, the broker will stop accepting new messages for that partition to ensure data consistency.
+- **Problem:** Data Loss Risk Due to Insufficient In-Sync Replicas
+    - The data in Kafka is considered committed when it is successfully replicated across all ISR. Let's assume a topic has three replicas, and all three are in the ISR, meaning they are up to date. However, if two of the replicas fail and are removed from the ISR, the only remaining in-sync replica will be the leader itself.
+
+        In this scenario, although the topic is configured with three replicas, only the leader remains in sync. Kafka will continue to write data, considering it "committed," even though it only exists in one replica (the leader). This presents a data consistency risk: if the leader also fails before the other replicas are restored, data loss can occur since no other replica has the most recent data.
+
+- **Solution:** 
+    - To protect data from loss, Kafka allows configuring the minimum number of in-sync replicas(`min.insync.replicas`). This configuration ensures that data is considered committed only when it has been written to a minimum number of ISR replicas (e.g., at least 2 out of 3 replicas).
+
+        If the number of in-sync replicas falls below the minimum, the broker refuses to accept new write requests to prevent data loss, making the partition read-only.
+
+- Example
+    - Configuration 
+        - 4 Replicas (1 Leader + 3 Followers)
+        - Minimum ISR = 2
+
+    In this setup, at least two replicas must be in sync for the partition to accept write requests. If two replicas are out of sync at any point of time, new writes are halted until atleast one more replica catches up.
+
+### Handling ISR Failures
+When followers fail to stay in sync or the leader itself crashes:
+
+- **Election of a New Leader:** Kafka automatically selects a new leader from the remaining in-sync followers.
+- **Data Loss Risk:** If there are no followers in sync (e.g., all are more than 10 seconds behind), uncommitted data (data not replicated across all followers) may be lost if the leader crashes.
